@@ -1,2 +1,2 @@
-LRUEvictionPolicy: 0.0428 seconds
-LFUEvictionPolicy: 0.6213 seconds
+LRUEvictionPolicy: 0.1157 seconds
+LFUEvictionPolicy: 0.1451 seconds
