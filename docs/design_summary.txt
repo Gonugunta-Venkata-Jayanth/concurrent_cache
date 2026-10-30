@@ -18,11 +18,11 @@ Architecture:
      - `key_accessed(key)`: Called on cache hits or updates.
      - `key_added(key)`: Called on insertion of new keys.
      - `key_removed(key)`: Called on key removal.
-     - `evict_key()`: Returns the key selected for eviction.
+     - `evict()`: Returns the key selected for eviction (the cache then calls `key_removed`).
 
 3. Concrete Eviction Policies:
    - LRU (Least Recently Used):
-     - Maintains a doubly linked list or ordered structure of keys by access time.
+     - Maintains an `OrderedDict` of keys by access time.
      - On every access, moves the key to the "most recently used" position.
      - Evicts the least recently used key.
    
@@ -43,10 +43,10 @@ Data Structures:
 ----------------
 - Core cache storage: Python dict for O(1) get/put operations.
 - LRU:
-  - Doubly linked list or `collections.OrderedDict` to track usage order.
+  - `collections.OrderedDict` to track usage order.
 - LFU:
   - Dict to map keys to frequency counts.
-  - Another dict mapping frequency to sets of keys for efficient eviction.
+  - Another dict mapping frequency to an `OrderedDict` of keys (LRU tie-break), plus the current minimum frequency, giving O(1) eviction.
 
 Pluggability:
 -------------
