@@ -16,7 +16,7 @@
 - **Thread-safe core** – `ThreadSafeCache` guards every `get`, `put` and `remove` with a single `threading.RLock`, so multiple threads can share one cache safely.
 - **Pluggable eviction (Strategy pattern)** – the cache takes any object implementing the abstract `EvictionPolicy` interface (`key_accessed`, `key_added`, `evict`, `key_removed`).
 - **LRU policy** – backed by `collections.OrderedDict`; accessed keys move to the end, the oldest key is evicted.
-- **LFU policy** – tracks per-key access counts and evicts the least frequently used key.
+- **LFU policy** – O(1) access and eviction using a key → frequency map plus a frequency → keys map (`OrderedDict` buckets, so ties go to the least recently used key).
 - **Capacity-bounded** – when the cache is full, the policy chooses which key to drop before the new key is inserted.
 - **Benchmark harness** – runs N threads × M `put`/`get` operations against each policy and records the timings.
 - **Zero runtime dependencies** – only the Python standard library (`pytest` for tests).
@@ -55,7 +55,9 @@ classDiagram
         -OrderedDict order
     }
     class LFUEvictionPolicy {
-        -dict freq
+        -dict key_freq
+        -dict~int, OrderedDict~ freq_keys
+        -int min_freq
     }
     ThreadSafeCache --> EvictionPolicy : delegates eviction
     EvictionPolicy <|-- LRUEvictionPolicy
@@ -82,14 +84,16 @@ flowchart TD
 ```
 concurrent_cache/
 ├── cache/
+│   ├── __init__.py          # exports ThreadSafeCache, EvictionPolicy, LRU/LFU policies
 │   ├── cache.py             # ThreadSafeCache
-│   ├── eviction_policy.py   # EvictionPolicy ABC + LRU and LFU implementations
-│   ├── lru_policy.py        # Alternative LRU with its own RLock (used by main.py and tests)
-│   └── lfu_policy.py        # Alternative LFU with its own RLock
+│   ├── eviction_policy.py   # EvictionPolicy abstract base class
+│   ├── lru_policy.py        # LRUEvictionPolicy (OrderedDict, O(1))
+│   └── lfu_policy.py        # LFUEvictionPolicy (frequency buckets, O(1))
 ├── benchmarks/
+│   ├── __init__.py
 │   └── benchmark.py         # LRU vs LFU multi-threaded benchmark
 ├── tests/
-│   └── test_cache.py        # Concurrent reader/writer test
+│   └── test_cache.py        # pytest: eviction order, capacity, remove, LFU invariants, thread safety
 ├── docs/
 │   ├── design_summary.txt   # Design notes
 │   └── performance_report.txt
@@ -134,8 +138,7 @@ run_benchmarks.bat
 ## Usage
 
 ```python
-from cache.cache import ThreadSafeCache
-from cache.eviction_policy import LRUEvictionPolicy, LFUEvictionPolicy
+from cache import ThreadSafeCache, LRUEvictionPolicy, LFUEvictionPolicy
 
 cache = ThreadSafeCache(capacity=2, eviction_policy=LRUEvictionPolicy())
 cache.put("a", 1)
@@ -147,24 +150,21 @@ cache.get("b")        # -> None
 lfu_cache = ThreadSafeCache(capacity=100, eviction_policy=LFUEvictionPolicy())
 ```
 
-Writing your own policy only requires subclassing `EvictionPolicy` and implementing its four methods.
+Writing your own policy only requires subclassing `EvictionPolicy` and implementing its four methods. Policies don't lock on their own: `ThreadSafeCache` calls them only while holding its lock.
 
 ## Results
 
-The benchmark (`benchmarks/benchmark.py`) uses a cache of capacity 500, 5 threads and 10,000 `put` + `get` operations per thread over 1,000 distinct keys. The run committed in [`benchmark_output.txt`](benchmark_output.txt) recorded:
+The benchmark (`benchmarks/benchmark.py`) uses a cache of capacity 500, 5 threads and 10,000 `put` + `get` operations per thread over 1,000 distinct keys. The run committed in [`benchmark_output.txt`](benchmark_output.txt) (Python 3.12, 2-core Linux sandbox) recorded:
 
 | Policy | Time |
 |--------|------|
-| LRUEvictionPolicy | 0.0428 s |
-| LFUEvictionPolicy | 0.6213 s |
+| LRUEvictionPolicy | 0.1157 s |
+| LFUEvictionPolicy | 0.1451 s |
 
-LFU is slower here because its `evict()` scans all tracked keys with `min()` (O(n) per eviction), while LRU evicts from the front of an `OrderedDict` in O(1). Timings depend on the machine and Python version. See [`docs/performance_report.txt`](docs/performance_report.txt) for the qualitative analysis.
+Over three consecutive runs on that machine LRU took 0.073–0.116 s and LFU 0.107–0.145 s. The previous LFU, which scanned every key with `min()` on each eviction (O(n)), took 0.48–0.54 s on the same machine and workload, so the frequency-bucket LFU is roughly 4× faster here and now close to LRU. Timings are noisy and depend on the machine and Python version. See [`docs/performance_report.txt`](docs/performance_report.txt) for the qualitative analysis.
 
 ## Future Work
 
-- O(1) LFU using a frequency → keys map (as described in the design notes)
-- Merge the duplicate LRU/LFU implementations into one module
-- Add assertion-based unit tests for eviction order, capacity limits and `remove`
 - Finer-grained locking / lock striping to reduce contention
 - TTL expiry, hit/miss statistics, and more policies (FIFO, ARC)
 - Package for `pip install` and add CI
