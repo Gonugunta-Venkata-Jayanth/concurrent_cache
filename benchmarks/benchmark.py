@@ -3,7 +3,8 @@
 import time
 import threading
 from cache.cache import ThreadSafeCache
-from cache.eviction_policy import LRUEvictionPolicy, LFUEvictionPolicy
+from cache.lfu_policy import LFUEvictionPolicy
+from cache.lru_policy import LRUEvictionPolicy
 
 def benchmark_policy(policy_class, ops_per_thread=10000, num_threads=5):
     cache = ThreadSafeCache(capacity=500, eviction_policy=policy_class())
