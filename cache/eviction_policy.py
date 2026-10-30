@@ -1,64 +1,28 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
 
-# Abstract base class
+
 class EvictionPolicy(ABC):
+    """Interface every eviction policy implements.
+
+    Policies are *not* thread-safe on their own: ``ThreadSafeCache`` calls them
+    only while holding its lock, so they need no locking of their own.
+    """
+
     @abstractmethod
     def key_accessed(self, key):
-        """Called when a key is accessed (read/write)."""
-        pass
+        """Called when an existing key is read or overwritten."""
 
     @abstractmethod
     def key_added(self, key):
-        """Called when a new key is added."""
-        pass
+        """Called when a new key is inserted."""
 
     @abstractmethod
     def evict(self):
-        """Returns the key to evict."""
-        pass
+        """Return the key that should be evicted next (or ``None`` if empty).
+
+        This only *chooses* the victim; the cache then calls ``key_removed``.
+        """
 
     @abstractmethod
     def key_removed(self, key):
-        """Called when a key is removed."""
-        pass
-
-
-# LRU Policy Implementation
-class LRUEvictionPolicy(EvictionPolicy):
-    def __init__(self):
-        self.order = OrderedDict()
-
-    def key_accessed(self, key):
-        if key in self.order:
-            self.order.move_to_end(key)
-
-    def key_added(self, key):
-        self.order[key] = None
-        self.order.move_to_end(key)
-
-    def evict(self):
-        return next(iter(self.order)) if self.order else None
-
-    def key_removed(self, key):
-        if key in self.order:
-            del self.order[key]
-
-
-# LFU Policy Implementation
-class LFUEvictionPolicy(EvictionPolicy):
-    def __init__(self):
-        self.freq = defaultdict(int)
-
-    def key_accessed(self, key):
-        self.freq[key] += 1
-
-    def key_added(self, key):
-        self.freq[key] = 1
-
-    def evict(self):
-        return min(self.freq, key=self.freq.get) if self.freq else None
-
-    def key_removed(self, key):
-        if key in self.freq:
-            del self.freq[key]
+        """Called when a key leaves the cache (eviction or explicit remove)."""

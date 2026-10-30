@@ -1,27 +1,27 @@
 from collections import OrderedDict
-from threading import RLock
+
 from .eviction_policy import EvictionPolicy
 
+
 class LRUEvictionPolicy(EvictionPolicy):
+    """Least Recently Used: every operation is O(1) via ``OrderedDict``."""
+
     def __init__(self):
-        self.lock = RLock()
         self.order = OrderedDict()
 
     def key_accessed(self, key):
-        with self.lock:
-            if key in self.order:
-                self.order.move_to_end(key)
+        if key in self.order:
+            self.order.move_to_end(key)
 
     def key_added(self, key):
-        with self.lock:
-            self.order[key] = None
+        self.order[key] = None
+        self.order.move_to_end(key)
 
     def evict(self):
-        with self.lock:
-            if self.order:
-                return next(iter(self.order))
-            return None
+        return next(iter(self.order)) if self.order else None
 
     def key_removed(self, key):
-        with self.lock:
-            self.order.pop(key, None)
+        self.order.pop(key, None)
+
+    def __len__(self):
+        return len(self.order)
